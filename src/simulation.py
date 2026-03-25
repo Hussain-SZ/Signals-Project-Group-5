@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from IPython.display import Audio, display
 from scipy.io import wavfile
 import sounddevice as sd
 
@@ -9,12 +8,6 @@ import time
 from helper_functions.simulation_utils import convolve, generate_mic_input
 from main_algorithm import nlms
 
-# playing main source audio
-# print("Near-end voice:")
-# display(Audio("../data/test_signals/near_end.wav"))
-
-# print("Far-end voice:")
-# display(Audio("../data/test_signals/far_end.wav"))
 fs, near_end_data = wavfile.read("../data/test_signals/near_end.wav")
 _, far_end_data = wavfile.read("../data/test_signals/far_end.wav")
 SAMPLE_RATE = 48000
@@ -84,7 +77,9 @@ time.sleep(1)
 # applying NLMS algorithm for echo cancellation
 STEP_SIZE = 0.3
 REGULARIZATION = 1e-6
-weights, error_signal = nlms(echoed_signal, mic_input, FILTER_SIZE, STEP_SIZE, REGULARIZATION)
+# weights, error_signal = nlms(echoed_signal, mic_input, FILTER_SIZE, STEP_SIZE, REGULARIZATION)
+weights, error_signal = nlms(far_end_data, mic_input, FILTER_SIZE, STEP_SIZE, REGULARIZATION)
+    
 error_signal = error_signal.astype(np.float32) / np.max(np.abs(error_signal))
 wavfile.write('../data/results/cleaned_output.wav', SAMPLE_RATE, np.int16(error_signal * 32767))
 
