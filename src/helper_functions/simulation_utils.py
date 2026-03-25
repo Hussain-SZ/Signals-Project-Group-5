@@ -15,15 +15,15 @@ def convolve(x, h):
         window = x_padded[i : i + N]
         y[i] = np.dot(window, h_flipped)
 
-    return y
+    return y[:len(x)]
 
 
 # generate microphone input audio
-def generate_mic_input(x, y_echo):
-    common_len = min(len(x), len(y_echo))
-
-    d = x[:common_len] + y_echo[:common_len]
-
+def generate_mic_input(y_echo, s, noise_level=0.001):
+    common_len = min(len(y_echo), len(s))
+    noise = noise_level * np.random.randn(common_len)
+    # Mic = Echo + Near-end + Noise 
+    d = y_echo[:common_len] + s[:common_len] + noise 
     return d
 
 
