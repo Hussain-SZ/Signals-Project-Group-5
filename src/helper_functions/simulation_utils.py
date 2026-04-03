@@ -23,6 +23,9 @@ def generate_mic_input(y_echo, s, noise_level=0.001):
     common_len = min(len(y_echo), len(s))
     noise = noise_level * np.random.randn(common_len)
     # Mic = Echo + Near-end + Noise 
+    # Echo is the far-end signal convolved with the room impulse response
+    # Near-end is the local speech signal (initially 0) 
+    # Weak random noise is added
     d = y_echo[:common_len] + s[:common_len] + noise 
     return d
 
@@ -30,7 +33,7 @@ def generate_mic_input(y_echo, s, noise_level=0.001):
 # ERLE calculation over sliding window
 def calculate_erle(echo, error, near_end, window_size=2000):
     erle_points = []
-    eps = 1e-10  # avoid division by zero
+    eps = 1e-9  # avoid division by zero
 
     # Process in windows to see performance over time
     for i in range(0, len(error) - window_size, window_size):

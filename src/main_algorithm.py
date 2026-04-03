@@ -31,6 +31,11 @@ def nlms(x, d, filter_size, step_size, regularization):
         estimated_echo[n] = y_hat
         error_signal[n] = error
 
+        x_max = np.max(np.abs(x_vec)) 
+        if np.abs(d[n]) > 0.5 * x_max:
+            # Double-talk detected, skip weight update
+            continue
+
         norm = np.dot(x_vec, x_vec) + regularization
         weights = weights + (step_size / norm) * error * x_vec
 

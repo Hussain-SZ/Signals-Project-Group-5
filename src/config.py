@@ -1,0 +1,8 @@
+# simulation parameters
+# SAMPLE_RATE = None
+
+FILTER_SIZE = 512
+DECAY_CONSTANT = 0.01
+STEP_SIZE = 0.3
+REGULARIZATION = 0.01
+ECHO_ATTEN = 0.5
