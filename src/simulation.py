@@ -92,10 +92,10 @@ wavfile.write(
     np.int16((mic_input / np.max(np.abs(mic_input))) * 32767),
 )
 
-print(" > Playing Microphone Input ...")
-sd.play(mic_input / np.max(np.abs(mic_input)), SAMPLE_RATE)
-sd.wait()
-time.sleep(1)
+# print(" > Playing Microphone Input ...")
+# sd.play(mic_input / np.max(np.abs(mic_input)), SAMPLE_RATE)
+# sd.wait()
+# time.sleep(1)
 
 ##### applying NLMS algorithm for echo cancellation #####
 # (STEP_SIZE, REGULARIZATION now from config.py)
@@ -115,10 +115,10 @@ wavfile.write(
     np.int16(error_signal_norm * 32767),
 )
 
-print(" > Playing Cleaned Signal ...")
-sd.play(error_signal_norm, SAMPLE_RATE)
-sd.wait()
-time.sleep(1)
+# print(" > Playing Cleaned Signal ...")
+# sd.play(error_signal_norm, SAMPLE_RATE)
+# sd.wait()
+# time.sleep(1)
 
 # Performance Evaluation
 # ERLE calculation
