@@ -1,0 +1,7 @@
+# simulation parameters
+# SAMPLE_RATE = None
+
+FILTER_SIZE = 256
+DECAY_CONSTANT = 0.01
+STEP_SIZE = 1
+REGULARIZATION = 0.0001
