@@ -5,7 +5,7 @@ import sounddevice as sd
 import time
 import os
 
-from config import FILTER_SIZE, DECAY_CONSTANT, STEP_SIZE, REGULARIZATION, ECHO_ATTEN
+from config import FILTER_SIZE, DECAY_CONSTANT, STEP_SIZE, REGULARIZATION
 
 from helper_functions.simulation_utils import (
     convolve,
@@ -44,7 +44,7 @@ if len(near_end_data.shape) > 1:
 # normalization
 near_end_data = near_end_data.astype(np.float32) / np.max(np.abs(near_end_data))
 
-far_end_data = far_end_data * ECHO_ATTEN   # The room absorbs energy, making the far-end echo quieter
+far_end_data = far_end_data * 0.5   # The room absorbs energy, making the far-end echo quieter
 far_end_data = far_end_data.astype(np.float32) / np.max(np.abs(far_end_data))
 # SET TO ZERO For testing purposes
 # near_end_data = np.zeros_like(near_end_data).astype(np.float32)
