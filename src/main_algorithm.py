@@ -17,7 +17,7 @@ def nlms(x, d, filter_size, step_size, regularization):
     weights = np.zeros(filter_size, dtype=np.float64)
     error_signal = np.zeros(length, dtype=np.float64)
     estimated_echo = np.zeros(length, dtype=np.float64)
-
+    weights_history = []
     for n in range(length):
         x_vec = np.zeros(filter_size, dtype=np.float64)
 
@@ -38,6 +38,7 @@ def nlms(x, d, filter_size, step_size, regularization):
 
         norm = np.dot(x_vec, x_vec) + regularization
         weights = weights + (step_size / norm) * error * x_vec
+        weights_history.append(weights.copy())
 
-    return weights, estimated_echo, error_signal
+    return weights, estimated_echo, error_signal, weights_history
     
