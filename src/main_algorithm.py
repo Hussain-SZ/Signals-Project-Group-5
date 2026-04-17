@@ -1,7 +1,7 @@
 import numpy as np
 
 
-def nlms(x, d, filter_size, step_size, regularization):
+def nlms(x, d, filter_size, step_size, regularization, initial_weights=None, phase=1):
     """
     x = far-end reference signal
     d = microphone signal
@@ -14,7 +14,12 @@ def nlms(x, d, filter_size, step_size, regularization):
     x = x[:length]
     d = d[:length]
 
-    weights = np.zeros(filter_size, dtype=np.float64)
+    # weights = np.zeros(filter_size, dtype=np.float64)
+    if initial_weights is None:
+        weights = np.zeros(filter_size, dtype=np.float64)
+    else:
+        weights = initial_weights.copy()
+        
     error_signal = np.zeros(length, dtype=np.float64)
     estimated_echo = np.zeros(length, dtype=np.float64)
     weights_history = []
@@ -22,8 +27,8 @@ def nlms(x, d, filter_size, step_size, regularization):
         x_vec = np.zeros(filter_size, dtype=np.float64)
 
         start = max(0, n - filter_size + 1)
-        current_samples = x[start:n + 1][::-1]
-        x_vec[:len(current_samples)] = current_samples
+        current_samples = x[start : n + 1][::-1]
+        x_vec[: len(current_samples)] = current_samples
 
         y_hat = np.dot(weights, x_vec)
         error = d[n] - y_hat
@@ -31,8 +36,8 @@ def nlms(x, d, filter_size, step_size, regularization):
         estimated_echo[n] = y_hat
         error_signal[n] = error
 
-        x_max = np.max(np.abs(x_vec)) 
-        if np.abs(d[n]) > 0.5 * x_max:
+        x_mean = np.mean(np.abs(x_vec))
+        if np.abs(d[n]) > 0.7 * x_mean or phase == 0:
             # Double-talk detected, skip weight update
             continue
 
@@ -41,4 +46,3 @@ def nlms(x, d, filter_size, step_size, regularization):
         weights_history.append(weights.copy())
 
     return weights, estimated_echo, error_signal, weights_history
-    

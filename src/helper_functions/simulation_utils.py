@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.signal import resample
 
 
 # convolution helper function
@@ -49,3 +50,10 @@ def calculate_erle(echo, error, near_end, window_size=2000):
         erle_points.append(erle)
 
     return np.array(erle_points)
+
+
+def resample_audio(data, orig_fs, target_fs):
+    """Resamples audio data to the target frequency."""
+    number_of_samples = int(len(data) * target_fs / orig_fs)
+    resampled_data = resample(data, number_of_samples)
+    return resampled_data.astype(np.float64)

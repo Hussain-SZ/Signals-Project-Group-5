@@ -5,5 +5,5 @@ FILTER_SIZE = 256
 STEP_SIZE = 1
 REGULARIZATION = 0.0001
 
-# For the simulated
+# For the simulated echo
 DECAY_CONSTANT = 0.01
