@@ -2,8 +2,9 @@
 Live demo: far-end from a WAV file, near-end from the microphone.
 Phases 0–3 match the course script; outputs go to ../data/demo/
 
-Uses the sound card's native sample rate (resamples the WAV if needed) and one
-continuous duplex Stream so far-end plays smoothly while the mic is recorded.
+Audio is captured in real time; echo cancellation uses `nlms` from
+`main_algorithm` on the recorded buffers (cumulative across phases when
+weights are carried, matching streaming continuity).
 
 Run from the src folder:
   python live_demo.py
@@ -27,6 +28,8 @@ from tqdm import tqdm
 
 from config import FILTER_SIZE, REGULARIZATION, STEP_SIZE
 
+from main_algorithm import nlms
+
 FAR_END_WAV = "../data/test_signals/test_far_end.wav"
 OUT_DIR = "../data/demo"
 
@@ -36,10 +39,10 @@ INPUT_DEVICE = None
 OUTPUT_DEVICE = None
 FORCE_SAMPLE_RATE = None
 
-GEIGEL_THRESHOLD = 0.7
 BLOCK_SIZE = 1024
 
 REF_DELAY_SAMPLES = 0
+GEIGEL_RATIO_IN_MAIN = 0.5
 
 PHASES = [
     ("phase0_baseline", False, False, False),
@@ -146,42 +149,6 @@ class DelayLine:
         return out
 
 
-class StreamingNLMS:
-    def __init__(self, filter_size, step_size, regularization, geigel_threshold, ref_delay_samples):
-        self.mu = step_size
-        self.eps = regularization
-        self.geigel_t = geigel_threshold
-        self.delay_line = DelayLine(ref_delay_samples)
-        self.w = np.zeros(filter_size, dtype=np.float64)
-        self.ref_vec = np.zeros(filter_size, dtype=np.float64)
-        self.dt_freeze_count = 0
-        self.total_updates = 0
-
-    def reset_weights(self):
-        self.w.fill(0.0)
-
-    def process_sample(self, d, x_play, adaptation, geigel):
-        x_ref = self.delay_line.push(x_play)
-        self.ref_vec = np.roll(self.ref_vec, 1)
-        self.ref_vec[0] = x_ref
-
-        y_hat = float(np.dot(self.w, self.ref_vec))
-        e = d - y_hat
-
-        if not adaptation:
-            return e
-
-        x_max = np.max(np.abs(self.ref_vec))
-        if geigel and abs(d) > self.geigel_t * x_max:
-            self.dt_freeze_count += 1
-            return e
-
-        norm = float(np.dot(self.ref_vec, self.ref_vec) + self.eps)
-        self.w += (self.mu / norm) * e * self.ref_vec
-        self.total_updates += 1
-        return e
-
-
 def load_far_end_mono(path):
     fs, data = wavfile.read(path)
     data = np.asarray(data, dtype=np.float64)
@@ -201,20 +168,18 @@ def write_wav_int16(path, fs, x):
 
 
 class PhaseStreamRunner:
-    """Duplex callback: continuous far-end to speakers, mic in, NLMS per sample."""
+    """Duplex callback: play far-end; record mic + aligned reference for offline NLMS."""
 
     def __init__(self):
         self.pos = 0
 
     def make_callback(
         self,
-        ec,
-        adaptation,
-        geigel,
+        delay_line,
         far_end,
         n_samples,
-        error_out,
         mic_out,
+        ref_out,
     ):
         n_far = len(far_end)
         far_idx = 0
@@ -234,18 +199,16 @@ class PhaseStreamRunner:
                 far_idx += 1
                 outdata[i, 0] = x_play
                 d = float(indata[i, 0])
+                x_ref = delay_line.push(x_play)
                 mic_out[self.pos] = d
-                error_out[self.pos] = ec.process_sample(d, x_play, adaptation, geigel)
+                ref_out[self.pos] = x_ref
                 self.pos += 1
 
         return callback
 
 
 def run_phase_duplex_stream(
-    ec,
-    adaptation,
-    geigel,
-    reset_weights,
+    delay_line,
     far_end,
     fs,
     block_size,
@@ -254,11 +217,8 @@ def run_phase_duplex_stream(
     phase_name,
     phase_duration_sec,
 ):
-    if reset_weights:
-        ec.reset_weights()
-
-    error_out = np.zeros(n_samples, dtype=np.float64)
     mic_out = np.zeros(n_samples, dtype=np.float64)
+    ref_out = np.zeros(n_samples, dtype=np.float64)
 
     runner = PhaseStreamRunner()
 
@@ -268,7 +228,7 @@ def run_phase_duplex_stream(
         dtype="float32",
         channels=1,
         latency="low",
-        callback=runner.make_callback(ec, adaptation, geigel, far_end, n_samples, error_out, mic_out),
+        callback=runner.make_callback(delay_line, far_end, n_samples, mic_out, ref_out),
     )
     if duplex is not None:
         stream_kw["device"] = duplex
@@ -289,16 +249,30 @@ def run_phase_duplex_stream(
                 pbar.refresh()
             pbar.n = phase_duration_sec
 
-    return error_out, mic_out
+    return mic_out, ref_out
 
 
-def compute_phase_metrics(error, mic, ec, phase_id, name, duration_s, adaptation, geigel):
+def compute_phase_metrics(
+    error,
+    mic,
+    final_weight_l2,
+    nlms_hist_len,
+    hist_len_prev,
+    phase_len,
+    phase_id,
+    name,
+    duration_s,
+    adaptation,
+    geigel,
+):
     e = error.astype(np.float64)
     m = mic.astype(np.float64)
     eps = 1e-18
     rms_e = float(np.sqrt(np.mean(e**2)))
     rms_m = float(np.sqrt(np.mean(m**2)))
     cancel_db = 10.0 * np.log10((np.mean(m**2) + eps) / (np.mean(e**2) + eps))
+    u = nlms_hist_len - hist_len_prev
+    fz = int(phase_len - u)
     return {
         "phase_id": phase_id,
         "name": name,
@@ -308,9 +282,9 @@ def compute_phase_metrics(error, mic, ec, phase_id, name, duration_s, adaptation
         "rms_mic": rms_m,
         "rms_error": rms_e,
         "mic_to_error_power_db": float(cancel_db),
-        "weight_l2": float(np.linalg.norm(ec.w)),
-        "double_talk_freeze_samples": ec.dt_freeze_count,
-        "nlms_update_samples": ec.total_updates,
+        "weight_l2": float(final_weight_l2),
+        "double_talk_freeze_samples": fz,
+        "nlms_update_samples": int(u),
     }
 
 
@@ -338,20 +312,16 @@ def main():
     far_end = resample_far_end(far_raw, fs_wav, fs)
     print("Far-end length (samples):", len(far_end), "at working rate", int(fs), "Hz")
 
-    ec = StreamingNLMS(
-        FILTER_SIZE,
-        STEP_SIZE,
-        REGULARIZATION,
-        GEIGEL_THRESHOLD,
-        REF_DELAY_SAMPLES,
-    )
-
     n_samples = int(round(PHASE_DURATION_SEC * fs))
     duration_s = float(n_samples) / fs
 
     session_error = []
     session_mic = []
     all_metrics = []
+
+    cum_ref_parts = []
+    cum_mic_parts = []
+    hist_len_prev = 0
 
     for phase_id, row in enumerate(PHASES):
         name, adaptation, geigel, reset_weights = row
@@ -360,7 +330,7 @@ def main():
         print("Phase:", name, "|", round(duration_s, 2), "s audio @", int(fs), "Hz")
         print("  adaptation =", adaptation, "  geigel =", geigel)
         if phase_id == 0:
-            print("  (Raw echo — weights stay zero.)")
+            print("  (Raw echo — process with identity for this phase.)")
         elif phase_id == 1:
             print("  (Stay silent — convergence.)")
         elif phase_id == 2:
@@ -368,14 +338,15 @@ def main():
         else:
             print("  (Change room — path change.)")
 
-        ec.dt_freeze_count = 0
-        ec.total_updates = 0
+        if reset_weights:
+            cum_ref_parts.clear()
+            cum_mic_parts.clear()
+            hist_len_prev = 0
 
-        err, mic = run_phase_duplex_stream(
-            ec,
-            adaptation,
-            geigel,
-            reset_weights,
+        delay_line = DelayLine(REF_DELAY_SAMPLES)
+
+        mic, ref = run_phase_duplex_stream(
+            delay_line,
             far_end,
             fs,
             BLOCK_SIZE,
@@ -385,6 +356,54 @@ def main():
             duration_s,
         )
 
+        if not adaptation:
+            err = mic.astype(np.float64).copy()
+            final_w_norm = 0.0
+            wh_len = 0
+            # No NLMS; freeze/update counts not applicable for this phase
+            m = compute_phase_metrics(
+                err,
+                mic,
+                final_w_norm,
+                0,
+                0,
+                n_samples,
+                phase_id,
+                name,
+                duration_s,
+                adaptation,
+                geigel,
+            )
+            m["nlms_update_samples"] = 0
+            m["double_talk_freeze_samples"] = 0
+        else:
+            cum_ref_parts.append(ref.astype(np.float64))
+            cum_mic_parts.append(mic.astype(np.float64))
+            R = np.concatenate(cum_ref_parts)
+            M = np.concatenate(cum_mic_parts)
+            weights, _, err_full, weights_history = nlms(
+                R, M, FILTER_SIZE, STEP_SIZE, REGULARIZATION
+            )
+            off = sum(len(x) for x in cum_ref_parts[:-1])
+            err = err_full[off : off + n_samples].copy()
+            final_w_norm = float(np.linalg.norm(weights))
+            wh_len = len(weights_history)
+
+            m = compute_phase_metrics(
+                err,
+                mic,
+                final_w_norm,
+                wh_len,
+                hist_len_prev,
+                n_samples,
+                phase_id,
+                name,
+                duration_s,
+                adaptation,
+                geigel,
+            )
+            hist_len_prev = wh_len
+
         session_error.append(err)
         session_mic.append(mic)
 
@@ -393,7 +412,6 @@ def main():
         write_wav_int16(wav_err, fs, err)
         write_wav_int16(wav_mic, fs, mic)
 
-        m = compute_phase_metrics(err, mic, ec, phase_id, name, duration_s, adaptation, geigel)
         all_metrics.append(m)
         with open(os.path.join(out_dir, name + "_metrics.json"), "w") as f:
             json.dump(m, f, indent=2)
@@ -417,10 +435,10 @@ def main():
         "filter_size": FILTER_SIZE,
         "step_size": STEP_SIZE,
         "regularization": REGULARIZATION,
-        "geigel_threshold": GEIGEL_THRESHOLD,
+        "geigel_ratio_matches_main_algorithm": GEIGEL_RATIO_IN_MAIN,
         "ref_delay_samples": REF_DELAY_SAMPLES,
         "block_size": BLOCK_SIZE,
-        "phases": all_metrics,
+        "phases": all_metrics
     }
     with open(os.path.join(out_dir, "session_metrics.json"), "w") as f:
         json.dump(summary, f, indent=2)
