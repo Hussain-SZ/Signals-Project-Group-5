@@ -7,10 +7,10 @@ from config import FILTER_SIZE, STEP_SIZE, REGULARIZATION
 import os
 import matplotlib.pyplot as plt
 
-# --- CONFIG ---
+
 TARGET_FS = 16000
 BLOCK_SIZE = 512
-PHASE = 1  # 0: No adaptation, >0 Adaptation
+PHASE = 0  # 0: No adaptation, >0 Adaptation
 
 # Resample
 fs_orig, far_end_raw = wavfile.read("../data/test_signals/hooriya-far-end.wav")
@@ -22,9 +22,8 @@ cleaned_audio_storage = []
 pointer = 0
 current_step = STEP_SIZE if PHASE == 1 else 0
 
-DELAY_SAMPLES = 512
-x_history = np.zeros(BLOCK_SIZE + DELAY_SAMPLES, dtype=np.float32)
-
+DELAY_SAMPLES = 0
+x_history = np.zeros(DELAY_SAMPLES + BLOCK_SIZE, dtype=np.float32)
 
 print(f"--- RUNNING PHASE {PHASE} ---")
 print("Press Ctrl+C to stop the demo and save the recording.")
@@ -57,7 +56,8 @@ with sd.OutputStream(
             # print(d_block.ndim, d_block.shape)
 
             # Update delay buffer
-            x_history = np.append(x_history[BLOCK_SIZE:], x_block)
+            x_history = np.roll(x_history, -BLOCK_SIZE)
+            x_history[-BLOCK_SIZE:] = x_block
             delayed_x_block = x_history[:BLOCK_SIZE]
             # input_to_nlms = x_history[-(BLOCK_SIZE + FILTER_SIZE):]
 
