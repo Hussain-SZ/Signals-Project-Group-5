@@ -105,13 +105,13 @@ wavfile.write(
 # WITH near-end signal
 mic_input_with = generate_mic_input(echoed_signal, near_end_data)
 weights_with, _, error_signal_with, weights_history_with = nlms(
-    far_end_data, mic_input_with, FILTER_SIZE, STEP_SIZE, REGULARIZATION
+    far_end_data, mic_input_with, FILTER_SIZE, STEP_SIZE, REGULARIZATION, initial_weights=None
 )
 
 # WITHOUT near-end signal (near-end = 0)
 mic_input_without = generate_mic_input(echoed_signal, empty_near_end)
 weights_without, _, error_signal_without, weights_history_without = nlms(
-    far_end_data, mic_input_without, FILTER_SIZE, STEP_SIZE, REGULARIZATION
+    far_end_data, mic_input_without, FILTER_SIZE, STEP_SIZE, REGULARIZATION, initial_weights=None
 )
 
 # Normalizing error signal for playback and saving
