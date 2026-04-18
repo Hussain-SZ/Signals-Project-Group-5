@@ -10,19 +10,19 @@ import matplotlib.pyplot as plt
 
 TARGET_FS = 16000
 BLOCK_SIZE = 512
-PHASE = 0  # 0: No adaptation, >0 Adaptation
+PHASE = 3  # 0: No adaptation, >0 Adaptation
 
 # Resample
-fs_orig, far_end_raw = wavfile.read("../data/test_signals/hooriya-far-end.wav")
+fs_orig, far_end_raw = wavfile.read("../data/test_signals/test-far-end.wav")
 far_end = resample_audio(far_end_raw, fs_orig, TARGET_FS)
 far_end = far_end.astype(np.float32) / (np.max(np.abs(far_end)) + 1e-10)
 
 weights = np.zeros(FILTER_SIZE)
 cleaned_audio_storage = []
 pointer = 0
-current_step = STEP_SIZE if PHASE == 1 else 0
+current_step = 0 if PHASE == 0 else STEP_SIZE
 
-DELAY_SAMPLES = 0
+DELAY_SAMPLES = 3955 
 x_history = np.zeros(DELAY_SAMPLES + BLOCK_SIZE, dtype=np.float32)
 
 print(f"--- RUNNING PHASE {PHASE} ---")
@@ -83,17 +83,34 @@ with sd.OutputStream(
         print("\nStopping demo and saving recording...")
 
 if erle_history:
-    plt.figure(figsize=(10, 4))
-    plt.plot(erle_history, label="Live ERLE (dB)")
-    plt.axhline(y=15, color="orange", linestyle="--", label="Acceptable")
-    plt.axhline(y=25, color="red", linestyle="--", label="Excellent")
-    plt.title(f"Real-Time ERLE - Phase {PHASE}")
-    plt.xlabel("Block Index")
-    plt.ylabel("ERLE (dB)")
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.savefig(f"../data/demo/metrics_phase_{PHASE}.png")
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 7), sharex=False)
+
+    # ERLE plot
+    ax1.plot(erle_history, color='steelblue', linewidth=1, label="Smoothed ERLE (dB)")
+    ax1.axhline(y=15, color="orange", linestyle="--", label="15 dB (Acceptable)")
+    ax1.axhline(y=25, color="red",    linestyle="--", label="25 dB (Excellent)")
+    ax1.set_title(f"Real-Time ERLE — Phase {PHASE}")
+    ax1.set_xlabel("Block Index")
+    ax1.set_ylabel("ERLE (dB)")
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+
+    # FIX #7: MSE plot — now actually plotted
+    ax2.plot(mse_history, color='tomato', linewidth=1, label="MSE (error signal)")
+    ax2.set_title("MSE of Error Signal Over Time")
+    ax2.set_xlabel("Block Index")
+    ax2.set_ylabel("MSE")
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+    ax2.set_yscale('log')  # log scale makes convergence much more visible
+
+    plt.tight_layout()
+    plt.savefig(f"../data/demo/metrics_phase_{PHASE}.png", dpi=150)
     plt.show()
+
+    print(f"Median ERLE: {np.median(erle_history):.1f} dB")
+    print(f"Final  ERLE: {erle_history[-1]:.1f} dB")
+
 
 if cleaned_audio_storage:
     # Fixed the path to point to your demo directory
